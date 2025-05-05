@@ -70,3 +70,16 @@ class PulsarConfig:
 
     # Monitoring
     MONITORING = {"stats_interval_seconds": 60}
+
+    # Cache metrics settings
+    CACHE_METRICS = {
+        "enabled": True,
+        "interval_seconds": 60,
+        "metrics": [
+            {"name": "cache_hits", "type": "counter", "help": "Total cache hits"},
+            {"name": "cache_misses", "type": "counter", "help": "Total cache misses"},
+            {"name": "cache_size", "type": "gauge", "help": "Current cache size in bytes"},
+            {"name": "cache_evictions", "type": "counter", "help": "Total cache evictions"},
+            {"name": "cache_latency", "type": "histogram", "help": "Cache operation latency"}
+        ]
+    }

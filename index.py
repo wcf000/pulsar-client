@@ -7,7 +7,23 @@ from uuid import uuid4
 
 from prometheus_client import Counter, Gauge, Histogram
 
-from app.core.pulsar.pulsar_client import PulsarClient
+from .client import (
+    PulsarClient,
+    batch_process_messages
+)
+from .decorators import (
+    pulsar_task,
+    pulsar_consumer,
+    validate_topic_permissions
+)
+
+__all__ = [
+    'PulsarClient',
+    'pulsar_task',
+    'pulsar_consumer',
+    'batch_process_messages',
+    'validate_topic_permissions'
+]
 
 logger = logging.getLogger(__name__)
 
@@ -54,3 +70,7 @@ track_batch_tasks = client.track_batch_tasks
 configure_task_retries = client.configure_task_retries
 get_queue_stats = client.get_queue_stats
 log_task_event = client.log_task_event
+
+# Expose decorators
+pulsar_task = pulsar_task
+pulsar_consumer = pulsar_consumer

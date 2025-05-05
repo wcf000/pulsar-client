@@ -1,0 +1,74 @@
+graph TD
+    A[Start Using Pulsar Integration] --> B[1. Configure Settings via config.py PulsarConfig Env Vars];
+
+    subgraph UsageOptions
+        direction LR
+        C{Choose Action};
+        B --> C;
+
+        C -- Publish Message --> D{Publish Method?};
+        D -- Direct Client --> E[Use client.py PulsarClient Send Retry DLQ];
+        D -- Decorator --> F[Use decorators.py ATpulsar_task Decorator];
+
+        C -- Consume Message --> G[Use decorators.py ATpulsar_consumer Decorator];
+
+        C -- Check Health --> H[Use health_check.py API Endpoint Status];
+    end
+
+    subgraph CoreComponents
+        direction TB
+        I[client.py: Async Client Logic];
+        J[decorators.py: ATpulsar_task ATpulsar_consumer Validation];
+        K[config.py: Configuration Source];
+        L[health_check.py: Health Logic Endpoints];
+        M[index.py: Central Imports Exports Optional];
+    end
+
+    subgraph ExternalSystems
+        N[Pulsar Cluster Topics Messages];
+        O[Prometheus Server Scrapes Metrics];
+    end
+
+    %% Dependencies
+    B --> K;
+    E --> I;
+    F --> J;
+    G --> J;
+    H --> L;
+
+    I --> K; 
+    J --> K; 
+    L --> K; 
+
+    %% Optional Imports via Index
+    E -- Optional Import via --> M;
+    F -- Optional Import via --> M;
+    G -- Optional Import via --> M;
+    H -- Optional Import via --> M;
+
+   
+    E --> N; 
+    F --> N; 
+    N --> G; 
+
+    %% Metrics Generation
+    E -- Generates Metrics --> O;
+    F -- Generates Metrics --> O;
+    G -- Generates Metrics --> O;
+    H -- Generates Metrics --> O;
+
+   
+    P[Optional Validate Permissions via Decorator];
+    J --> P;
+    E -.-> P;
+    F --> P;
+    G --> P;
+
+    %% End Point
+    Q[Monitor Metrics Review Logs Adjust Config];
+    O --> Q;
+    N --> Q;
+
+    style CoreComponents fill:#f9f,stroke:#333,stroke-width:1px
+    style ExternalSystems fill:#ccf,stroke:#333,stroke-width:1px
+    style UsageOptions fill:#eee,stroke:#333,stroke-width:1px
