@@ -1,0 +1,129 @@
+# docker-compose.pulsar.yml
+version: '3.8'
+
+services:
+  zookeeper:
+    image: apachepulsar/pulsar:latest # Use consistent tag if possible
+    container_name: zookeeper
+    restart: on-failure
+    networks:
+      - pulsar
+    volumes:
+      - pulsar-zookeeper-data:/pulsar/data
+    environment:
+      # Keep necessary Zookeeper env vars
+      - metadataStoreUrl=zk:zookeeper:2181
+      - PULSAR_MEM=${PULSAR_MEM_ZK:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"} # Use specific var
+      - ZOO_DATA_DIR=/pulsar/data/zookeeper
+      - ZOO_DATA_LOG_DIR=/pulsar/data/zookeeper
+    command: |
+      bash -c "bin/apply-config-from-env.py conf/zookeeper.conf && \
+             bin/generate-zookeeper-config.sh conf/zookeeper.conf && \
+             exec bin/pulsar zookeeper"
+    healthcheck:
+      test: ["CMD", "bin/pulsar-zookeeper-ruok.sh"]
+      interval: 20s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  pulsar-init:
+    container_name: pulsar-init
+    hostname: pulsar-init
+    image: apachepulsar/pulsar:latest # Use consistent tag
+    networks:
+      - pulsar
+    command: >
+      bin/pulsar initialize-cluster-metadata
+      --cluster cluster-a
+      --zookeeper zookeeper:2181
+      --configuration-store zookeeper:2181
+      --web-service-url http://broker:8080 # Port changed to 8080 for broker internal
+      --broker-service-url pulsar://broker:6650
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      # It should run AFTER zookeeper is healthy but BEFORE broker relies on initialized metadata.
+      # Often run as a one-off task or managed carefully in startup sequence.
+      # If broker fails without it, add depends_on to broker for this service condition: service_completed_successfully
+
+  bookie:
+    image: apachepulsar/pulsar:3.1.0 # Use consistent tag if possible
+    container_name: bookie
+    restart: on-failure # Added restart policy
+    command:
+      - bash
+      - -c
+      - |
+        bin/apply-config-from-env.py conf/bookkeeper.conf &&
+        exec bin/pulsar bookie
+    volumes:
+      - pulsar-bookie-data:/pulsar/data/bookkeeper # Use named volume
+    environment:
+      # Keep necessary Bookie env vars
+      - zkServers=zookeeper:2181
+      - metadataServiceUri=metadata-store:zk:zookeeper:2181 # Ensure this matches ZK setup
+      - PULSAR_MEM=${PULSAR_MEM_BOOKIE:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"} # Specific var
+      # These are important bookie configs, ensure they are set correctly
+      - bookiePort=3181 # Default, ensure not conflicting
+      - journalDirectory=/pulsar/data/bookkeeper/journal
+      - ledgerDirectories=/pulsar/data/bookkeeper/ledgers
+    networks:
+      - pulsar
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    # Add healthcheck for Bookie if available/needed
+
+  broker:
+    image: apachepulsar/pulsar:latest # Use consistent tag
+    container_name: broker
+    hostname: broker
+    restart: on-failure
+    networks:
+      - pulsar
+      - default # If external services need to connect via default network
+    environment:
+      # Keep necessary Broker env vars
+      - metadataStoreUrl=zk:zookeeper:2181
+      - zookeeperServers=zookeeper:2181
+      - configurationMetadataStoreUrl=zk:zookeeper:2181 # Often needed
+      - clusterName=cluster-a
+      - managedLedgerDefaultEnsembleSize=1
+      - managedLedgerDefaultWriteQuorum=1
+      - managedLedgerDefaultAckQuorum=1
+      - advertisedAddress=broker # Internal hostname
+      - advertisedListeners=external:pulsar://pulsar-broker:6650 # Use an externally resolvable name or IP if accessed from outside docker network
+      - webServicePort=8080 # Default internal HTTP port
+      - brokerServicePort=6650 # Default internal Pulsar port
+      - PULSAR_MEM=${PULSAR_MEM_BROKER:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m"} # Specific var
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      bookie:
+        condition: service_started # Or service_healthy if bookie has healthcheck
+      # pulsar-init: # Uncomment if broker strictly depends on init completion
+      #   condition: service_completed_successfully
+    ports:
+      # Map internal ports to host ports
+      - "6650:6650" # Pulsar binary protocol
+      - "8081:8080" # Pulsar HTTP admin/API (using 8081 on host)
+    command: bash -c "bin/apply-config-from-env.py conf/broker.conf && exec bin/pulsar broker"
+    # Add healthcheck for Broker
+    healthcheck:
+       test: ["CMD-SHELL", "curl -f http://localhost:8080/admin/v2/brokers/health || exit 1"]
+       interval: 30s
+       timeout: 10s
+       retries: 5
+       start_period: 60s
+
+
+networks:
+  pulsar:
+    driver: bridge
+  default: # Declare if broker needs to be reached on default
+    external: true # Assume default network is defined elsewhere (e.g., in core.yml)
+
+volumes:
+  pulsar-zookeeper-data:
+  pulsar-bookie-data:
