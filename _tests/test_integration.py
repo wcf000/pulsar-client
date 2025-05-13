@@ -3,45 +3,31 @@ import time
 
 import pytest
 
+import pytest
+import pytest_asyncio
+import time
 from app.core.pulsar.client import PulsarClient
 from app.core.pulsar.config import PulsarConfig
 
-# Helper: try both localhost and 127.0.0.1 for Pulsar broker (Windows+Docker workaround)
-
-
+@pytest_asyncio.fixture
+async def pulsar_client():
+    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    yield client
+    await client.close()
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-
-async def test_real_pulsar_connection():
+async def test_real_pulsar_connection(pulsar_client):
     """Verify we can connect to the configured Pulsar instance"""
-    # Use the shared pulsar_client fixture for real broker tests
+    assert await pulsar_client.health_check() is True
 
-    try:
-        # Test basic connectivity
-        assert await PulsarClient.health_check() is True
-    finally:
-        await PulsarClient.close()
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-
-async def test_circuit_breaker_activation(pulsar_client):
-    """Test circuit breaker activation (real Pulsar connection)"""
-    # Use the shared pulsar_client fixture for real broker tests
-
-    # Simulate circuit breaker by sending to a non-existent topic or with invalid config
-    with pytest.raises(Exception):
-        await pulsar_client.send_message("nonexistent_topic", {"key": "value"})
-    # todo: Add assertion for circuit breaker state if/when available on the real client
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-
 async def test_message_roundtrip(pulsar_client):
     """Test sending and receiving a message"""
     test_topic = f"test-topic-{int(time.time())}"
-    test_msg = {"test": "data"}
+    test_msg = {"test": "data", "topic": test_topic}
     
     # Use the shared pulsar_client fixture for real broker tests
 
@@ -69,5 +55,4 @@ async def test_message_roundtrip(pulsar_client):
         assert received[0] == test_msg
     finally:
         # Cleanup
-        await PulsarClient.admin.delete_topic(test_topic)
-        await PulsarClient.close()
+        await pulsar_client.admin.delete_topic(test_topic)

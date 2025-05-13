@@ -74,7 +74,7 @@ class PulsarAdmin:
 
 class PulsarClient:
     # ... existing code ...
-    async def _process_message(self, topic: str, message: dict) -> bool:
+    async def _process_message(self, message: dict) -> bool:
         """Default dummy process_message for test compatibility."""
         return True
 
@@ -156,7 +156,19 @@ class PulsarClient:
             return False
 
     async def send_message(self, topic: str, message: dict) -> bool:
-        """Async-compatible: send a single message to Pulsar using sync client in a thread."""
+        """Send a single message to Pulsar with retry and circuit breaker logic."""
+        return await self._process_with_retry(
+            topic=topic,
+            message=message,
+            callback=self._send_single_message,
+            raise_on_failure=True
+        )
+
+    async def _send_single_message(self, message: dict) -> bool:
+        """Helper to send a single message using the sync producer in a thread."""
+        topic = message.get("topic")
+        if not topic:
+            raise ValueError("Message must include a 'topic' field")
         def sync_send():
             producer = self._client.create_producer(topic)
             producer.send(json.dumps(message).encode('utf-8'))
@@ -222,8 +234,8 @@ class PulsarClient:
         expected_exception=CB_EXPECTED_EXCEPTION,
     )
     async def _process_with_retry(
-        self, topic: str, message: dict, callback: callable, retry_policy: dict = None
-    ):
+        self, topic: str, message: dict, callback: callable, retry_policy: dict = None, raise_on_failure: bool = False
+    ) -> bool:
         retry_policy = retry_policy or {
             "max_retries": self._max_retries,
             "delay": self._retry_delay,
@@ -254,6 +266,8 @@ class PulsarClient:
                 )
                 if attempt == retry_policy["max_retries"]:
                     await self._send_to_dlq(topic, message, str(e))
+                    if raise_on_failure:
+                        raise last_exception
                     return False
 
                 delay = retry_policy["delay"] * (
@@ -400,7 +414,7 @@ class PulsarClient:
             async with semaphore:
                 try:
                     result = await self._process_with_retry(
-                        topic=msg["topic"], message=msg, callback=self._process_message
+                        topic=msg["topic"], message=msg, callback=self._process_message, raise_on_failure=False
                     )
                     processed_count += 1
                     # [Pulsar Cache] server-side tiered cache handles retention; no client invalidation
