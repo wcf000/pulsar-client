@@ -70,31 +70,36 @@ def pulsar_task(
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             used_client = client or globals().get('client')
-            try:
-                # Execute the function
-                result = await func(*args, **kwargs)
-                
-                # Create and send task
-                task = {
-                    "function": func.__name__,
-                    "args": args,
-                    "kwargs": kwargs,
-                    "result": result
-                }
-                await used_client.send_message(topic, task)
-                pulsar_messages_sent.labels(topic=topic).inc()
-                
-                return result
-                
-            except Exception as e:
-                pulsar_errors.labels(type=e.__class__.__name__).inc()
-                logger.error(f"Task failed: {e}")
-                
-                if dlq_topic:
-                    await used_client._send_to_dlq(topic, {"args": args, "kwargs": kwargs}, str(e))
-                
-                raise
-                
+            attempt = 0
+            last_exc = None
+            while attempt <= max_retries:
+                try:
+                    result = await func(*args, **kwargs)
+                    # Create and send task
+                    task = {
+                        "function": func.__name__,
+                        "args": args,
+                        "kwargs": kwargs,
+                        "result": result
+                    }
+                    await used_client.send_message(topic, task)
+                    pulsar_messages_sent.labels(topic=topic).inc()
+                    return result
+                except Exception as e:
+                    attempt += 1
+                    last_exc = e
+                    pulsar_errors.labels(type=e.__class__.__name__).inc()
+                    logger.error(f"Task failed on attempt {attempt}: {e}")
+                    if attempt > max_retries:
+                        if dlq_topic:
+                            await used_client._send_to_dlq(topic, {"args": args, "kwargs": kwargs}, str(e))
+                        raise
+                    else:
+                        import asyncio
+                        await asyncio.sleep(retry_delay)
+            # Defensive: should never reach here
+            if last_exc:
+                raise last_exc
         return wrapper
     return decorator
 

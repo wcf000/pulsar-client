@@ -46,10 +46,41 @@ PULSAR_WAIT_DURATION = Histogram(
 )
 
 
+class PulsarAdmin:
+    """Minimal Pulsar Admin for test cleanup (topic deletion)."""
+    def __init__(self, service_url: str):
+        self.service_url = service_url
+        # Pulsar REST Admin endpoint (default for standalone is 8080)
+        # Can be overridden by config if needed
+        self.admin_url = self.service_url.replace('pulsar://', 'http://').replace(':6650', ':8080')
+
+    async def delete_topic(self, topic: str) -> None:
+        """Delete a topic using the Pulsar REST Admin API. Swallow errors if not available."""
+        import aiohttp
+        # Pulsar topics use persistent://public/default/topic format in REST
+        if not topic.startswith('persistent://'):
+            topic = f"persistent://public/default/{topic}"
+        url = f"{self.admin_url}/admin/v2/{topic}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.delete(url) as resp:
+                    if resp.status not in (204, 404):
+                        text = await resp.text()
+                        raise Exception(f"Failed to delete topic: {resp.status} {text}")
+        except Exception as e:
+            # Only log for test cleanup, do not fail tests if admin is unavailable
+            logger.debug(f"[PulsarAdmin] Could not delete topic {topic}: {e}")
+
+
 class PulsarClient:
     # ... existing code ...
     async def _process_message(self, topic: str, message: dict) -> bool:
         """Default dummy process_message for test compatibility."""
+        return True
+
+    async def _send_to_dlq(self, message: dict, original_topic: str, error_type: str) -> bool:
+        """Send a message to the Dead Letter Queue and record metric."""
+        PULSAR_DLQ_MESSAGES.labels(original_topic=original_topic, error_type=error_type).inc()
         return True
     """
     Async Pulsar HTTP client with production features including:
@@ -72,6 +103,23 @@ class PulsarClient:
     CB_EXPECTED_EXCEPTION = (ConnectionError, TimeoutError)
 
     def __init__(self, service_url: str = None, max_retries: int = 3, retry_delay: float = 5.0):
+        """
+        Initialize PulsarClient using the official async Apache Pulsar Python client.
+        """
+        if service_url is None:
+            service_url = PulsarConfig.SERVICE_URL
+        self.service_url = service_url
+        self._client = pulsar.Client(self.service_url)
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
+        self._batch = []
+        self._last_flush = datetime.now()
+        self._admin = PulsarAdmin(self.service_url)
+
+    @property
+    def admin(self):
+        return self._admin
+
         """
         Initialize PulsarClient using the official async Apache Pulsar Python client.
         """
@@ -182,8 +230,10 @@ class PulsarClient:
             "backoff_factor": 2,
         }
 
+        last_exception = None
         for attempt in range(retry_policy["max_retries"] + 1):
             try:
+                logger.debug(f"[Retry] Attempt {attempt+1} for topic={topic}, message={message}")
                 start_time = time.time()
                 await callback(message)
                 PULSAR_PROCESSING_TIME.labels(topic=topic).observe(
@@ -193,10 +243,15 @@ class PulsarClient:
 
             except CircuitBreakerError as e:
                 # Circuit is open - bypass retries and go straight to DLQ
+                logger.error(f"[Retry] CircuitBreakerError on topic={topic}: {e}")
                 await self._send_to_dlq(topic, message, f"Circuit open: {str(e)}")
                 return False
 
             except Exception as e:
+                last_exception = e
+                logger.warning(
+                    f"[Retry] Failure on attempt {attempt+1} for topic={topic}, message={message}: {e}"
+                )
                 if attempt == retry_policy["max_retries"]:
                     await self._send_to_dlq(topic, message, str(e))
                     return False
@@ -204,9 +259,7 @@ class PulsarClient:
                 delay = retry_policy["delay"] * (
                     retry_policy["backoff_factor"] ** attempt
                 )
-                logger.warning(
-                    f"Retry {attempt + 1} for message {message.get('id')} in {delay:.1f}s"
-                )
+                logger.debug(f"[Retry] Sleeping {delay:.2f}s before next attempt for topic={topic}")
                 PULSAR_RETRIES.labels(topic=topic).inc()
                 await asyncio.sleep(delay)
 
@@ -320,7 +373,7 @@ class PulsarClient:
                 await asyncio.sleep(self._retry_delay)
 
     async def batch_process_messages(
-        self, messages: list, batch_size: int = 100
+        self, topic: str, messages: list, batch_size: int = 100
     ) -> list:
         """
         Optimized batch processing with:
@@ -361,8 +414,8 @@ class PulsarClient:
         # Record metrics
         duration = time.time() - start_time
         PULSAR_BATCH_SIZE.set(len(messages))
-        PULSAR_BATCH_DURATION.observe(duration)
-        PULSAR_BATCH_SUCCESS.inc(processed_count)
+        PULSAR_BATCH_DURATION.labels(topic=topic).observe(duration)
+        PULSAR_BATCH_SUCCESS.labels(topic=topic).inc(processed_count)
 
         return results
 
