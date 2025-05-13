@@ -14,7 +14,7 @@ pulsar_errors = Counter(
 )
 
 PULSAR_MESSAGE_LATENCY = Histogram(
-    "pulsar_message_latency_seconds", "Pulsar message processing latency", ["operation"]
+    "pulsar_message_latency_seconds", "Pulsar message processing latency", ["topic"]
 )
 PULSAR_QUEUE_SIZE = Gauge(
     "pulsar_queue_size", "Current size of Pulsar queues", ["topic"]

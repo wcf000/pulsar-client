@@ -80,7 +80,8 @@ def pulsar_task(
                         "function": func.__name__,
                         "args": args,
                         "kwargs": kwargs,
-                        "result": result
+                        "result": result,
+                        "topic": topic  # ! Required for PulsarClient strict topic check
                     }
                     await used_client.send_message(topic, task)
                     pulsar_messages_sent.labels(topic=topic).inc()

@@ -109,7 +109,7 @@ async def test_pulsar_consumer_decorator(pulsar_client):
         received.append(msg)
         return True
     # Send a message
-    msg = {"foo": "bar"}
+    msg = {"key": "value", "topic": "test_topic"}
     await pulsar_client.send_message(topic, msg)
     await process_message()
     await asyncio.sleep(1)

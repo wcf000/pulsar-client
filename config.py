@@ -58,6 +58,9 @@ class PulsarConfig:
         "batching_max_publish_delay_ms": 10,
     }
 
+    # Polling interval for status checks
+    POLL_INTERVAL: float = 1.0
+
     # Consumer settings
     CONSUMER = {
         "subscription_type": "Shared",  # or "Exclusive", "Failover", "Key_Shared"
