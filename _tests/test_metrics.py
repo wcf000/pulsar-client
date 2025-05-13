@@ -3,10 +3,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core.pulsar.client import PulsarClient
-from app.core.pulsar.decorators import pulsar_task
 
 
 @pytest.mark.asyncio
+
 async def test_message_metrics_tracking():
     """Test Prometheus metrics collection"""
     with (
@@ -25,6 +25,7 @@ async def test_message_metrics_tracking():
 
 
 @pytest.mark.asyncio
+
 async def test_batch_metrics_tracking():
     """Test batch processing metrics"""
     with (

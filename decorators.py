@@ -6,14 +6,15 @@ import logging
 from collections.abc import Callable
 from typing import Optional
 
-from .client import PulsarClient
-from .index import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
 from app.core.pulsar.config import PulsarConfig
 
-logger = logging.getLogger(__name__)
-client = PulsarClient()
+from .client import PulsarClient
+from .metrics import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
 
-def validate_topic_permissions(topic: str, role: Optional[str] = None) -> None:
+logger = logging.getLogger(__name__)
+client = PulsarClient()  # Async client
+
+def validate_topic_permissions(topic: str, role: str | None) -> None:
     """
     Secure validation for topic access permissions
     
@@ -39,9 +40,10 @@ def validate_topic_permissions(topic: str, role: Optional[str] = None) -> None:
 
 def pulsar_task(
     topic: str,
+    dlq_topic: str | None = None,
     max_retries: int = 3,
     retry_delay: float = 5.0,
-    dlq_topic: Optional[str] = None
+    client: PulsarClient | None = client
 ):
     """
     Decorator for creating Pulsar tasks from functions.
@@ -62,11 +64,12 @@ def pulsar_task(
     if dlq_topic is not None and (not isinstance(dlq_topic, str) or not dlq_topic.strip()):
         raise ValueError("DLQ topic must be None or a non-empty string")
 
-    validate_topic_permissions(topic)
+    validate_topic_permissions(topic, None)
 
     def decorator(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            used_client = client or globals().get('client')
             try:
                 # Execute the function
                 result = await func(*args, **kwargs)
@@ -78,8 +81,7 @@ def pulsar_task(
                     "kwargs": kwargs,
                     "result": result
                 }
-                
-                await client.send_message(topic, task)
+                await used_client.send_message(topic, task)
                 pulsar_messages_sent.labels(topic=topic).inc()
                 
                 return result
@@ -89,7 +91,7 @@ def pulsar_task(
                 logger.error(f"Task failed: {e}")
                 
                 if dlq_topic:
-                    await client._send_to_dlq(topic, {"args": args, "kwargs": kwargs}, str(e))
+                    await used_client._send_to_dlq(topic, {"args": args, "kwargs": kwargs}, str(e))
                 
                 raise
                 
@@ -101,7 +103,8 @@ def pulsar_consumer(
     topic: str,
     subscription: str,
     filter_fn: Optional[Callable] = None,
-    max_parallelism: int = 10
+    max_parallelism: int = 10,
+    client: PulsarClient | None = None
 ):
     """
     Decorator for creating Pulsar consumers from functions.
@@ -120,13 +123,14 @@ def pulsar_consumer(
     if not isinstance(max_parallelism, int) or max_parallelism <= 0:
         raise ValueError("max_parallelism must be a positive integer")
 
-    validate_topic_permissions(topic)
+    validate_topic_permissions(topic, None)
 
     def decorator(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            used_client = client or globals().get('client')
             with PULSAR_MESSAGE_LATENCY.labels(operation=func.__name__).time():
-                return await client.batch_consume(
+                return await used_client.batch_consume(
                     topic=topic,
                     subscription=subscription,
                     batch_size=1,

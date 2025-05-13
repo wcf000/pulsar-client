@@ -8,18 +8,21 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import JSONResponse
-from prometheus_client import CONTENT_TYPE_LATEST, Gauge, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app.core.pulsar.pulsar_client import PulsarClient
-from app.core.redis.rate_limit import service_rate_limit
+from app.core.pulsar.client import PulsarClient
+from app.core.pulsar.metrics import (
+    PULSAR_HEALTH,
+    pulsar_errors,
+    pulsar_messages_sent,
+)
+from app.core.valkey_core.limiting.rate_limit import service_rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Prometheus metrics
-PULSAR_HEALTH = Gauge(
-    "pulsar_health_status", "Pulsar health status (1=healthy, 0=unhealthy)"
-)
+# Use only project metrics (see metrics.py)
+# Health status can be tracked via logs or add a Gauge to metrics.py if needed
 
 
 class PulsarHealth:

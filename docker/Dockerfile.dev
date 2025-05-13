@@ -1,0 +1,35 @@
+# --- Python Pulsar Dev Dockerfile ---
+# Use official Python 3.10 (compatible with pulsar-client)
+FROM python:3.10-slim
+
+# Set workdir
+WORKDIR /app
+
+# Install system dependencies for building wheels, optional C libs, etc.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        libssl-dev \
+        lz4 \
+        liblz4-dev \
+        libzstd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry (if you use it)
+RUN pip install poetry
+
+# Copy dependency files first for better caching
+COPY pyproject.toml poetry.lock* ./
+
+# Install Python dependencies (including pulsar-client)
+RUN poetry config virtualenvs.create false \
+    && poetry add pulsar-client \
+    && poetry install --no-interaction --no-ansi --no-root
+
+# Copy the rest of your code
+COPY . .
+
+# Default command: open bash shell for dev
+CMD ["bash"]

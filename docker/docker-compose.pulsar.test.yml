@@ -1,0 +1,113 @@
+# docker-compose.pulsar.test.yml
+# Compose file for running Pulsar integration tests in Docker
+# Use this instead of the main compose for platform-agnostic, CI/CD-safe testing
+
+version: '3.8'
+
+services:
+  zookeeper:
+    image: apachepulsar/pulsar:3.1.0
+    container_name: zookeeper
+    restart: on-failure
+    networks:
+      - pulsar
+    volumes:
+      - pulsar-zookeeper-data:/pulsar/data
+    environment:
+      - metadataStoreUrl=zk:zookeeper:2181
+      - ZOO_DATA_DIR=/pulsar/data/zookeeper
+      - ZOO_DATA_LOG_DIR=/pulsar/data/zookeeper
+    command: |
+      bash -c "bin/apply-config-from-env.py conf/zookeeper.conf && \
+             bin/generate-zookeeper-config.sh conf/zookeeper.conf && \
+             exec bin/pulsar zookeeper"
+    healthcheck:
+      test: ["CMD", "bin/pulsar-zookeeper-ruok.sh"]
+      interval: 20s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  bookie:
+    image: apachepulsar/pulsar:3.1.0
+    container_name: bookie
+    restart: on-failure
+    command:
+      - bash
+      - -c
+      - |
+        bin/apply-config-from-env.py conf/bookkeeper.conf &&
+        exec bin/pulsar bookie
+    volumes:
+      - ./data/bookkeeper:/pulsar/data/bookkeeper
+    environment:
+      - zkServers=zookeeper:2181
+      - metadataServiceUri=metadata-store:zk:zookeeper:2181
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m
+      - bookiePort=3181
+      - journalDirectory=/pulsar/data/bookkeeper/journal
+      - ledgerDirectories=/pulsar/data/bookkeeper/ledgers
+    networks:
+      - pulsar
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+
+  broker:
+    image: apachepulsar/pulsar:3.1.0
+    container_name: broker
+    hostname: broker
+    restart: on-failure
+    networks:
+      pulsar:
+        aliases:
+          - pulsar-broker
+    environment:
+      - metadataStoreUrl=zk:zookeeper:2181
+      - zookeeperServers=zookeeper:2181
+      - configurationMetadataStoreUrl=zk:zookeeper:2181
+      - clusterName=cluster-a
+      - advertisedAddress=localhost
+      - PULSAR_PREFIX_advertisedAddress=localhost
+      - PULSAR_PREFIX_advertisedListeners=external:pulsar://localhost:6650
+      - managedLedgerDefaultEnsembleSize=1
+      - managedLedgerDefaultWriteQuorum=1
+      - managedLedgerDefaultAckQuorum=1
+      - advertisedListeners=external:pulsar://localhost:6650,internal:pulsar://broker:6650
+      - webServicePort=8080
+      - brokerServicePort=6650
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      bookie:
+        condition: service_started
+    ports:
+      - "6650:6650"
+      - "8081:8080"
+    command: bash -c "bin/apply-config-from-env.py conf/broker.conf && exec bin/pulsar broker"
+    healthcheck:
+       test: ["CMD-SHELL", "curl -f http://localhost:8080/admin/v2/brokers/health || exit 1"]
+       interval: 30s
+       timeout: 10s
+       retries: 5
+       start_period: 60s
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: app/core/pulsar/docker/Dockerfile.test
+    depends_on:
+      broker:
+        condition: service_healthy
+    networks:
+      - pulsar
+    environment:
+      - PULSAR_SERVICE_URL=pulsar://broker:6650
+
+volumes:
+  pulsar-zookeeper-data:
+
+networks:
+  pulsar:
+    driver: bridge

@@ -32,6 +32,7 @@ async def test_wait_for_task_completion_success(monkeypatch):
     assert received == statuses
 
 @pytest.mark.asyncio
+
 async def test_wait_for_task_completion_timeout(monkeypatch):
     client = PulsarClient()
     # Always return PENDING
@@ -45,8 +46,9 @@ async def test_wait_for_task_completion_timeout(monkeypatch):
         )
 
 @pytest.mark.asyncio
+
 async def test_progress_callback_exception(monkeypatch):
-    client = PulsarClient()
+    client = PulsarClient() 
     # Return completed immediately
     async def complete(task_id):
         return {"state": client.COMPLETED}

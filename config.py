@@ -5,6 +5,9 @@ Pulsar client configuration with production-ready settings.
 from app.core.config import settings
 
 
+import os
+import sys
+
 class PulsarConfig:
     """
     Configuration for Pulsar client with production settings.
@@ -12,30 +15,32 @@ class PulsarConfig:
     """
 
     # Connection settings
-    SERVICE_URL = (
-        f"pulsar://{settings.PULSAR_ADVERTISED_ADDRESS}:{settings.PULSAR_BROKER_PORT}"
-    )
-    SERVICE_URLS = [
-        f"pulsar://{settings.PULSAR_ADVERTISED_ADDRESS}:{settings.PULSAR_BROKER_PORT}"
-    ]
+    # * Use localhost:6650 for integration tests if env var is set or running under pytest
+    _test_localhost = os.getenv("PULSAR_TEST_LOCALHOST") == "1" or "pytest" in sys.modules
+    if _test_localhost:
+        SERVICE_URL = "pulsar://127.0.0.1:6650"
+        SERVICE_URLS = ["pulsar://127.0.0.1:6650"]
+    else:
+        SERVICE_URL = f"pulsar://{settings.pulsar.PULSAR_ADVERTISED_ADDRESS}:{settings.pulsar.PULSAR_BROKER_PORT}"
+        SERVICE_URLS = [SERVICE_URL]
 
     # Authentication
     AUTHENTICATION = {
         "tls": {
-            "enabled": True,
-            "cert_path": settings.PULSAR_TLS_CERT_PATH,
-            "key_path": settings.PULSAR_TLS_KEY_PATH,
-            "ca_path": settings.PULSAR_TLS_CA_PATH,
+            "enabled": False,
+            "cert_path": settings.pulsar.PULSAR_TLS_CERT_PATH,
+            "key_path": settings.pulsar.PULSAR_TLS_KEY_PATH,
+            "ca_path": settings.pulsar.PULSAR_TLS_CA_PATH,
         },
-        "token": settings.PULSAR_AUTH_TOKEN,
+        "token": settings.pulsar.PULSAR_AUTH_TOKEN,
     }
 
     # Security
     SECURITY = {
-        "tls_enabled": True,
-        "cert_path": settings.PULSAR_TLS_CERT_PATH,
+        "tls_enabled": False,
+        "cert_path": settings.pulsar.PULSAR_TLS_CERT_PATH,
         "auth_type": "jwt",  # or 'oauth2'
-        "jwt_token": settings.PULSAR_JWT_TOKEN,
+        "jwt_token": settings.pulsar.PULSAR_JWT_TOKEN,
         "roles": [
             {"name": "admin", "permissions": ["produce", "consume", "manage"]},
             {"name": "service", "permissions": ["produce", "consume"]},

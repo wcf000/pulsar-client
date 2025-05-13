@@ -3,7 +3,7 @@ version: '3.8'
 
 services:
   zookeeper:
-    image: apachepulsar/pulsar:latest # Use consistent tag if possible
+    image: apachepulsar/pulsar:3.1.0 # Use consistent tag for all services
     container_name: zookeeper
     restart: on-failure
     networks:
@@ -13,7 +13,7 @@ services:
     environment:
       # Keep necessary Zookeeper env vars
       - metadataStoreUrl=zk:zookeeper:2181
-      - PULSAR_MEM=${PULSAR_MEM_ZK:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"} # Use specific var
+      # - PULSAR_MEM=${PULSAR_MEM_ZK:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"} # Removed: causes Zookeeper JVM to fail, see troubleshooting notes
       - ZOO_DATA_DIR=/pulsar/data/zookeeper
       - ZOO_DATA_LOG_DIR=/pulsar/data/zookeeper
     command: |
@@ -33,12 +33,13 @@ services:
     image: apachepulsar/pulsar:latest # Use consistent tag
     networks:
       - pulsar
+    # Port changed to 8080 for broker internal
     command: >
       bin/pulsar initialize-cluster-metadata
       --cluster cluster-a
       --zookeeper zookeeper:2181
       --configuration-store zookeeper:2181
-      --web-service-url http://broker:8080 # Port changed to 8080 for broker internal
+      --web-service-url http://broker:8080
       --broker-service-url pulsar://broker:6650
     depends_on:
       zookeeper:
@@ -57,13 +58,15 @@ services:
       - |
         bin/apply-config-from-env.py conf/bookkeeper.conf &&
         exec bin/pulsar bookie
+    # Use a bind mount for Bookie data for Windows/WSL2 compatibility.
+    # Make sure this folder exists and is writable by all users on the host.
     volumes:
-      - pulsar-bookie-data:/pulsar/data/bookkeeper # Use named volume
+      - ./data/bookkeeper:/pulsar/data/bookkeeper
     environment:
       # Keep necessary Bookie env vars
       - zkServers=zookeeper:2181
       - metadataServiceUri=metadata-store:zk:zookeeper:2181 # Ensure this matches ZK setup
-      - PULSAR_MEM=${PULSAR_MEM_BOOKIE:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"} # Specific var
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m
       # These are important bookie configs, ensure they are set correctly
       - bookiePort=3181 # Default, ensure not conflicting
       - journalDirectory=/pulsar/data/bookkeeper/journal
@@ -76,27 +79,31 @@ services:
     # Add healthcheck for Bookie if available/needed
 
   broker:
-    image: apachepulsar/pulsar:latest # Use consistent tag
+    image: apachepulsar/pulsar:3.1.0 # Use consistent tag for all services
     container_name: broker
     hostname: broker
     restart: on-failure
     networks:
-      - pulsar
-      - default # If external services need to connect via default network
+      pulsar:
+        aliases:
+          - pulsar-broker
+      # - default # Removed for local/CI compatibility. If you need external connectivity, see README.
     environment:
       # Keep necessary Broker env vars
       - metadataStoreUrl=zk:zookeeper:2181
       - zookeeperServers=zookeeper:2181
       - configurationMetadataStoreUrl=zk:zookeeper:2181 # Often needed
       - clusterName=cluster-a
+      - advertisedAddress=127.0.0.1
+      - PULSAR_PREFIX_advertisedAddress=127.0.0.1
+      - PULSAR_PREFIX_advertisedListeners=external:pulsar://127.0.0.1:6650
       - managedLedgerDefaultEnsembleSize=1
       - managedLedgerDefaultWriteQuorum=1
       - managedLedgerDefaultAckQuorum=1
-      - advertisedAddress=broker # Internal hostname
-      - advertisedListeners=external:pulsar://pulsar-broker:6650 # Use an externally resolvable name or IP if accessed from outside docker network
+      - advertisedListeners=external:pulsar://127.0.0.1:6650,internal:pulsar://broker:6650 # Allow host and internal Docker access
       - webServicePort=8080 # Default internal HTTP port
       - brokerServicePort=6650 # Default internal Pulsar port
-      - PULSAR_MEM=${PULSAR_MEM_BROKER:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m"} # Specific var
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -121,8 +128,8 @@ services:
 networks:
   pulsar:
     driver: bridge
-  default: # Declare if broker needs to be reached on default
-    external: true # Assume default network is defined elsewhere (e.g., in core.yml)
+  # default: # Removed for local/CI compatibility. If you need to connect to an external network, define it explicitly in your override compose file or see README.
+  #   external: true
 
 volumes:
   pulsar-zookeeper-data:

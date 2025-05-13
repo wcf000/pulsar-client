@@ -255,7 +255,7 @@ Short example:
 
 pulsar-admin namespaces set-persistence my-tenant/my-ns -e 3 -w 3 -a 3
 
-List persistence policies
+list persistence policies
 
 You can see which persistence policy currently applies to a namespace.
 
