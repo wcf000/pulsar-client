@@ -1,0 +1,35 @@
+# --- Pulsar Integration Test Runner ---
+
+FROM python:3.10-slim
+
+WORKDIR /tests
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    build-essential \
+    libssl-dev \
+    lz4 \
+    liblz4-dev \
+    libzstd-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry
+
+# Copy dependency files from root context (make sure these exist in context!)
+COPY backend/pyproject.toml backend/poetry.lock* ./
+
+# Install deps
+RUN poetry config virtualenvs.create false \
+ && poetry add pulsar-client \
+ && poetry install --no-root --no-ansi --no-interaction
+
+# Copy source code & tests
+COPY backend/app/core/pulsar/_tests ./tests/pulsar/_tests
+COPY backend/scripts/run_integration_tests.sh ./run_integration_tests.sh
+
+RUN chmod +x ./run_integration_tests.sh
+
+ENTRYPOINT ["./run_integration_tests.sh"]

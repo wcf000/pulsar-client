@@ -20,7 +20,11 @@ async def test_send_message_success():
     print("PulsarClient imported from:", PulsarClient.__module__)
     print("PulsarClient file:", sys.modules[PulsarClient.__module__].__file__)
     print("Has health_check:", hasattr(PulsarClient, "health_check"))
-    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    client = PulsarClient(
+        service_url="pulsar://127.0.0.1:6650",
+        max_retries=1,
+        retry_delay=1.0
+    )
     print("Client config service_url:", getattr(client, 'service_url', None))
     topic = f"test_send_{uuid.uuid4()}"
     result = await client.send_message(topic, {"key": "value", "topic": topic})
@@ -31,7 +35,11 @@ async def test_send_message_success():
 @pytest.mark.asyncio
 async def test_send_message_retry_logic():
     """Test retry behavior on failed sends (real Pulsar connection)"""
-    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    client = PulsarClient(
+        service_url="pulsar://127.0.0.1:6650",
+        max_retries=1,
+        retry_delay=1.0
+    )
     topic = f"test_retry_{uuid.uuid4()}"
     # Simulate a retry by sending a message that may fail, then succeed
     try:
@@ -46,7 +54,7 @@ async def test_send_message_retry_logic():
 @pytest.mark.asyncio
 async def test_batch_process_messages():
     """Test batch message processing (real Pulsar connection)"""
-    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    client = PulsarClient(service_url="pulsar://localhost:6650")
     topic = f"test_batch_{uuid.uuid4()}"
     messages = [
         {"id": 1, "topic": topic, "payload": "msg1"},
@@ -64,7 +72,7 @@ async def test_batch_process_messages():
 @pytest.mark.asyncio
 async def test_batch_process_empty():
     """Test empty batch processing (real Pulsar connection)"""
-    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    client = PulsarClient(service_url="pulsar://localhost:6650")
     # Use a dummy topic for empty batch
     results = await client.batch_process_messages("test_empty_topic", [], batch_size=10)
     assert results == []
@@ -72,7 +80,7 @@ async def test_batch_process_empty():
 @pytest.mark.asyncio
 async def test_batch_process_partial_failures():
     """Test batch with partial failures (real Pulsar connection)"""
-    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    client = PulsarClient(service_url="pulsar://localhost:6650")
     topic = f"test_partial_{uuid.uuid4()}"
     messages = [
         {"topic": topic, "payload": "msg1"},
@@ -89,7 +97,7 @@ async def test_batch_process_partial_failures():
 @pytest.mark.asyncio
 async def test_batch_process_large_batch():
     """Test batch size limits (real Pulsar connection)"""
-    client = PulsarClient(service_url="pulsar://127.0.0.1:6650")
+    client = PulsarClient(service_url="pulsar://localhost:6650")
     topic = f"test_large_{uuid.uuid4()}"
     messages = [{"id": i, "topic": topic, "payload": f"msg{i}"} for i in range(500)]
     results = await client.batch_process_messages(topic, messages, batch_size=50)

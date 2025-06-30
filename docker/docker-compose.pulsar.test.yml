@@ -2,8 +2,6 @@
 # Compose file for running Pulsar integration tests in Docker
 # Use this instead of the main compose for platform-agnostic, CI/CD-safe testing
 
-version: '3.8'
-
 services:
   zookeeper:
     image: apachepulsar/pulsar:3.1.0
@@ -14,7 +12,8 @@ services:
     volumes:
       - pulsar-zookeeper-data:/pulsar/data
     environment:
-      - metadataStoreUrl=zk:zookeeper:2181
+      - metadataStoreUrl=zk:zookeeper:
+      - PULSAR_PREFIX_bookiePort=3181
       - ZOO_DATA_DIR=/pulsar/data/zookeeper
       - ZOO_DATA_LOG_DIR=/pulsar/data/zookeeper
     command: |
@@ -27,6 +26,23 @@ services:
       timeout: 10s
       retries: 30
       start_period: 30s
+
+  pulsar-init:
+    container_name: pulsar-init
+    hostname: pulsar-init
+    image: apachepulsar/pulsar:3.1.0
+    networks:
+      - pulsar
+    command: >
+      bin/pulsar initialize-cluster-metadata
+      --cluster cluster-a
+      --zookeeper zookeeper:2181
+      --configuration-store zookeeper:2181
+      --web-service-url http://broker:8080
+      --broker-service-url pulsar://broker:6650
+    depends_on:
+      zookeeper:
+        condition: service_healthy
 
   bookie:
     image: apachepulsar/pulsar:3.1.0
@@ -43,6 +59,8 @@ services:
     environment:
       - zkServers=zookeeper:2181
       - metadataServiceUri=metadata-store:zk:zookeeper:2181
+      - advertisedAddress=bookie
+      - bookieId=bookie
       - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m
       - bookiePort=3181
       - journalDirectory=/pulsar/data/bookkeeper/journal
@@ -52,6 +70,12 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "netstat", "-lntp", "|", "grep", "3181"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   broker:
     image: apachepulsar/pulsar:3.1.0
@@ -67,36 +91,43 @@ services:
       - zookeeperServers=zookeeper:2181
       - configurationMetadataStoreUrl=zk:zookeeper:2181
       - clusterName=cluster-a
+      # Change these to allow external connections from host 
       - advertisedAddress=localhost
-      - PULSAR_PREFIX_advertisedAddress=localhost
+      - advertisedListeners=external:pulsar://localhost:6650
       - PULSAR_PREFIX_advertisedListeners=external:pulsar://localhost:6650
+      - PULSAR_PREFIX_brokerServiceURLTLS=
+      - PULSAR_PREFIX_brokerClientOperationTimeoutSeconds=10
+      - PULSAR_PREFIX_brokerClientSocketTimeoutSeconds=10
       - managedLedgerDefaultEnsembleSize=1
       - managedLedgerDefaultWriteQuorum=1
       - managedLedgerDefaultAckQuorum=1
-      - advertisedListeners=external:pulsar://localhost:6650,internal:pulsar://broker:6650
       - webServicePort=8080
       - brokerServicePort=6650
       - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=256m
+      - bookkeeperClientHealthCheckEnabled=true
     depends_on:
       zookeeper:
         condition: service_healthy
       bookie:
-        condition: service_started
+        condition: service_healthy
+      pulsar-init:
+        condition: service_completed_successfully
     ports:
       - "6650:6650"
-      - "8081:8080"
+      - "8080:8080"
     command: bash -c "bin/apply-config-from-env.py conf/broker.conf && exec bin/pulsar broker"
     healthcheck:
        test: ["CMD-SHELL", "curl -f http://localhost:8080/admin/v2/brokers/health || exit 1"]
-       interval: 30s
+       interval: 15s
        timeout: 10s
-       retries: 5
+       retries: 12
        start_period: 60s
 
   test-runner:
     build:
-      context: .
-      dockerfile: app/core/pulsar/docker/Dockerfile.test
+      context: ../../../../../
+      dockerfile: backend/app/core/pulsar/docker/Dockerfile.test
+    container_name: test-runner
     depends_on:
       broker:
         condition: service_healthy
@@ -104,9 +135,12 @@ services:
       - pulsar
     environment:
       - PULSAR_SERVICE_URL=pulsar://broker:6650
+    restart: on-failure
+    command: ./run_integration_tests.sh
 
 volumes:
   pulsar-zookeeper-data:
+  pulsar-bookie-data:
 
 networks:
   pulsar:

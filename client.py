@@ -15,10 +15,12 @@ from prometheus_client import Counter, Gauge, Histogram
 
 from app.core.pulsar.config import PulsarConfig
 from app.core.telemetry.client import TelemetryClient
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-telemetry = TelemetryClient(service_name="pulsar_client")
+# Use the main service name from settings instead of "pulsar_client"
+telemetry = TelemetryClient(service_name=getattr(settings, "PROJECT_NAME", "FastAPI Connect"))
 
 # Metrics
 PULSAR_BATCH_SIZE = Gauge("pulsar_batch_size", "Size of Pulsar message batches")
@@ -107,8 +109,8 @@ class PulsarClient:
     FAILED = "FAILED"
 
     # Circuit breaker configuration
-    CB_FAILURE_THRESHOLD = 5
-    CB_RECOVERY_TIMEOUT = 30
+    CB_FAILURE_THRESHOLD = 1
+    CB_RECOVERY_TIMEOUT = 3
     CB_EXPECTED_EXCEPTION = (ConnectionError, TimeoutError)
 
     def __init__(self, service_url: str = None, max_retries: int = 3, retry_delay: float = 5.0):

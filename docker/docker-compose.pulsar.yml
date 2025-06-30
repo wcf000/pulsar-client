@@ -13,6 +13,7 @@ services:
     environment:
       # Keep necessary Zookeeper env vars
       - metadataStoreUrl=zk:zookeeper:2181
+      - PULSAR_PREFIX_bookiePort=3181
       # - PULSAR_MEM=${PULSAR_MEM_ZK:-"-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m"} # Removed: causes Zookeeper JVM to fail, see troubleshooting notes
       - ZOO_DATA_DIR=/pulsar/data/zookeeper
       - ZOO_DATA_LOG_DIR=/pulsar/data/zookeeper
@@ -49,28 +50,36 @@ services:
       # If broker fails without it, add depends_on to broker for this service condition: service_completed_successfully
 
   bookie:
-    image: apachepulsar/pulsar:3.1.0 # Use consistent tag if possible
+    image: apachepulsar/pulsar:3.1.0
     container_name: bookie
-    restart: on-failure # Added restart policy
+    restart: on-failure
     command:
       - bash
       - -c
       - |
-        bin/apply-config-from-env.py conf/bookkeeper.conf &&
+        mkdir -p /pulsar/data/bookkeeper/ledgers/current
+        mkdir -p /pulsar/data/bookkeeper/journal/current
+        chmod -R 777 /pulsar/data/bookkeeper
+        bin/apply-config-from-env.py conf/bookkeeper.conf
+        bin/pulsar shell bookkeeper format-storage -nonInteractive -force || true
         exec bin/pulsar bookie
-    # Use a bind mount for Bookie data for Windows/WSL2 compatibility.
-    # Make sure this folder exists and is writable by all users on the host.
     volumes:
-      - ./data/bookkeeper:/pulsar/data/bookkeeper
+      - ./data/bookkeeper:/pulsar/data/bookkeeper  # Use host mount instead of named volume
     environment:
-      # Keep necessary Bookie env vars
       - zkServers=zookeeper:2181
-      - metadataServiceUri=metadata-store:zk:zookeeper:2181 # Ensure this matches ZK setup
+      - metadataServiceUri=metadata-store:zk:zookeeper:2181
       - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m
-      # These are important bookie configs, ensure they are set correctly
-      - bookiePort=3181 # Default, ensure not conflicting
+      - bookiePort=3181
       - journalDirectory=/pulsar/data/bookkeeper/journal
       - ledgerDirectories=/pulsar/data/bookkeeper/ledgers
+      # Allow init of empty dirs
+      - PULSAR_PREFIX_allowStorageExpansion=true
+      # Increase thresholds to allow higher disk usage
+      - PULSAR_PREFIX_dbStorage_writeLedgerDirsThreshold=0.999
+      - PULSAR_PREFIX_dbStorage_ledgerDiskUsageThreshold=0.999
+      - PULSAR_PREFIX_dbStorage_journalDiskUsageThreshold=0.999
+      - PULSAR_PREFIX_diskUsageThreshold=0.999
+      - PULSAR_PREFIX_diskUsageWarnThreshold=0.99
     networks:
       - pulsar
     depends_on:
@@ -133,4 +142,3 @@ networks:
 
 volumes:
   pulsar-zookeeper-data:
-  pulsar-bookie-data:
