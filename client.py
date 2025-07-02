@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 
 import pulsar  # Official Pulsar (sync) client
+
 from circuitbreaker import CircuitBreakerError, circuit
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -120,7 +121,11 @@ class PulsarClient:
         if service_url is None:
             service_url = PulsarConfig.SERVICE_URL
         self.service_url = service_url
-        self._client = pulsar.Client(self.service_url)
+        try:
+            self._client = pulsar.Client(self.service_url)
+        except AttributeError as e:
+            logger.error(f"Failed to initialize Pulsar.Client: {e}")
+            self._client = None
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         self._batch = []
