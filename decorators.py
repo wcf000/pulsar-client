@@ -8,12 +8,17 @@ from typing import Optional
 
 from app.core.pulsar.config import PulsarConfig
 
-from .client import PulsarClient
-from .metrics import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
+from app.core.pulsar.client import PulsarClient
+from app.core.pulsar.metrics import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
 from app.core.pulsar.metrics import PULSAR_CONSUMER_LAG
 
 logger = logging.getLogger(__name__)
-client = PulsarClient()  # Async client
+# Initialize Pulsar client lazily; protect import-time instantiation
+try:
+    client = PulsarClient()  # Async client
+except Exception as e:
+    logger.warning(f"PulsarClient initialization failed at import time: {e}")
+    client = None
 
 def validate_topic_permissions(topic: str, role: str | None) -> None:
     """
