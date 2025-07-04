@@ -3,6 +3,10 @@ Pulsar client configuration with production-ready settings.
 """
 
 from app.core.config import settings
+import logging
+
+# Set up logger for debugging Pulsar connections
+logger = logging.getLogger(__name__)
 
 
 import os
@@ -22,11 +26,17 @@ class PulsarConfig:
     if _test_localhost:
         SERVICE_URL = "pulsar://127.0.0.1:6650"
         SERVICE_URLS = ["pulsar://127.0.0.1:6650"]
+        logger.info("🔧 Pulsar Config: Using localhost for testing")
     else:
         # TODO: STREAMNATIVE - Replace with your StreamNative cluster URL
         # SERVICE_URL = "pulsar+ssl://your-cluster.streamnative.cloud:6651"
         SERVICE_URL = f"pulsar+ssl://{settings.pulsar.PULSAR_ADVERTISED_ADDRESS}:{settings.pulsar.PULSAR_BROKER_PORT}"
         SERVICE_URLS = [SERVICE_URL]
+        logger.info(f"🔧 Pulsar Config: Using StreamNative cluster: {SERVICE_URL}")
+        logger.info(f"🔧 Pulsar Config: Advertised Address: {settings.pulsar.PULSAR_ADVERTISED_ADDRESS}")
+        logger.info(f"🔧 Pulsar Config: Broker Port: {settings.pulsar.PULSAR_BROKER_PORT}")
+        logger.info(f"🔧 Pulsar Config: TLS Enabled: True")
+        logger.info(f"🔧 Pulsar Config: Auth Token Length: {len(settings.pulsar.PULSAR_AUTH_TOKEN) if settings.pulsar.PULSAR_AUTH_TOKEN else 0} chars")
 
     # Authentication
     # TODO: STREAMNATIVE - Enable TLS and configure authentication for StreamNative
