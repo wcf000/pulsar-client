@@ -39,6 +39,11 @@ class PulsarConfig:
         print(f"🔍 Env PULSAR_BROKER_PORT={env_port}")
         print(f"🔍 Env PULSAR_AUTH_TOKEN length={(len(env_token) if env_token else 0)}")
         print(f"🔍 Env PULSAR_JWT_TOKEN length={(len(env_jwt) if env_jwt else 0)}")
+        # Diagnostic: show settings values loaded via Pydantic
+        print(f"🔍 SETTINGS PULSAR_ADVERTISED_ADDRESS={settings.pulsar.PULSAR_ADVERTISED_ADDRESS}")
+        print(f"🔍 SETTINGS PULSAR_BROKER_PORT={settings.pulsar.PULSAR_BROKER_PORT}")
+        print(f"🔍 SETTINGS PULSAR_AUTH_TOKEN length={len(settings.pulsar.PULSAR_AUTH_TOKEN or '')}")
+        print(f"🔍 SETTINGS PULSAR_JWT_TOKEN length={len(settings.pulsar.PULSAR_JWT_TOKEN or '')}")
         # Fallback to settings if env vars are missing
         use_addr = env_addr or settings.pulsar.PULSAR_ADVERTISED_ADDRESS
         use_port = env_port or str(settings.pulsar.PULSAR_BROKER_PORT)
