@@ -22,21 +22,37 @@ class PulsarConfig:
     # * Use localhost:6650 for integration tests if env var is set or running under pytest
     # TODO: STREAMNATIVE - Update SERVICE_URL to use StreamNative cluster endpoint
     # Example: "pulsar+ssl://your-cluster.streamnative.cloud:6651"
-    _test_localhost = os.getenv("PULSAR_TEST_LOCALHOST") == "1" or "pytest" in sys.modules
+    _test_localhost = os.getenv("PULSAR_TEST_LOCALHOST") == "1"
+    print(_test_localhost)
     if _test_localhost:
         SERVICE_URL = "pulsar://127.0.0.1:6650"
         SERVICE_URLS = ["pulsar://127.0.0.1:6650"]
         print("🔧 Pulsar Config: Using localhost for testing")
     else:
-        # TODO: STREAMNATIVE - Replace with your StreamNative cluster URL
-        # SERVICE_URL = "pulsar+ssl://your-cluster.streamnative.cloud:6651"
-        SERVICE_URL = f"pulsar+ssl://{settings.pulsar.PULSAR_ADVERTISED_ADDRESS}:{settings.pulsar.PULSAR_BROKER_PORT}"
+        # Allow direct override from environment for StreamNative settings
+        env_addr = os.getenv("PULSAR_ADVERTISED_ADDRESS")
+        env_port = os.getenv("PULSAR_BROKER_PORT")
+        env_token = os.getenv("PULSAR_AUTH_TOKEN")
+        env_jwt = os.getenv("PULSAR_JWT_TOKEN")
+        # Diagnostic: show raw environment values
+        print(f"🔍 Env PULSAR_ADVERTISED_ADDRESS={env_addr}")
+        print(f"🔍 Env PULSAR_BROKER_PORT={env_port}")
+        print(f"🔍 Env PULSAR_AUTH_TOKEN length={(len(env_token) if env_token else 0)}")
+        print(f"🔍 Env PULSAR_JWT_TOKEN length={(len(env_jwt) if env_jwt else 0)}")
+        # Fallback to settings if env vars are missing
+        use_addr = env_addr or settings.pulsar.PULSAR_ADVERTISED_ADDRESS
+        use_port = env_port or str(settings.pulsar.PULSAR_BROKER_PORT)
+        SERVICE_URL = f"pulsar+ssl://{use_addr}:{use_port}"
         SERVICE_URLS = [SERVICE_URL]
         print(f"🔧 Pulsar Config: Using StreamNative cluster: {SERVICE_URL}")
-        print(f"🔧 Pulsar Config: Advertised Address: {settings.pulsar.PULSAR_ADVERTISED_ADDRESS}")
-        print(f"🔧 Pulsar Config: Broker Port: {settings.pulsar.PULSAR_BROKER_PORT}")
+        print(f"🔧 Pulsar Config: Advertised Address: {use_addr}")
+        print(f"🔧 Pulsar Config: Broker Port: {use_port}")
         print("🔧 Pulsar Config: TLS Enabled: True")
-        print(f"🔧 Pulsar Config: Auth Token Length: {len(settings.pulsar.PULSAR_AUTH_TOKEN) if settings.pulsar.PULSAR_AUTH_TOKEN else 0} chars")
+        token_len = len(env_token) if env_token else len(settings.pulsar.PULSAR_AUTH_TOKEN or "")
+        print(f"🔧 Pulsar Config: Auth Token Length: {token_len} chars")
+        # Override authentication tokens from env
+        AUTH_TOKEN = env_token or settings.pulsar.PULSAR_AUTH_TOKEN
+        JWT_TOKEN = env_jwt or settings.pulsar.PULSAR_JWT_TOKEN
 
     # Authentication
     # TODO: STREAMNATIVE - Enable TLS and configure authentication for StreamNative
@@ -48,7 +64,7 @@ class PulsarConfig:
             "key_path": settings.pulsar.PULSAR_TLS_KEY_PATH,
             "ca_path": settings.pulsar.PULSAR_TLS_CA_PATH,
         },
-        "token": settings.pulsar.PULSAR_AUTH_TOKEN,  # TODO: STREAMNATIVE - Set your JWT token from StreamNative console
+        "token": AUTH_TOKEN,  # TODO: STREAMNATIVE - Set your JWT token from StreamNative console
     }
 
     # Security
@@ -57,7 +73,7 @@ class PulsarConfig:
         "tls_enabled": True,  # TODO: STREAMNATIVE - Set to True for production
         "cert_path": settings.pulsar.PULSAR_TLS_CERT_PATH,
         "auth_type": "jwt",  # TODO: STREAMNATIVE - Keep as "jwt" for StreamNative
-        "jwt_token": settings.pulsar.PULSAR_JWT_TOKEN,  # TODO: STREAMNATIVE - Set from StreamNative console
+        "jwt_token": JWT_TOKEN,  # TODO: STREAMNATIVE - Set from StreamNative console
         "roles": [
             {"name": "admin", "permissions": ["produce", "consume", "manage"]},
             {"name": "service", "permissions": ["produce", "consume"]},
