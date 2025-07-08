@@ -96,7 +96,7 @@ class PulsarConfig:
 
     # Producer settings
     PRODUCER = {
-        "send_timeout_ms": 3000,  # Reduced from 30000 to 3 seconds
+        "send_timeout_ms": 3000,  # Keep at 3 seconds (under 4s requirement)
         "block_if_queue_full": False,  # Don't block, fail fast
         "max_pending_messages": 100,  # Reduced from 1000
         "batching_enabled": True,
@@ -110,8 +110,8 @@ class PulsarConfig:
     # Consumer settings
     CONSUMER = {
         "subscription_type": "Shared",  # or "Exclusive", "Failover", "Key_Shared"
-        "ack_timeout_ms": 5000,  # Reduced from 30000 to 5 seconds
-        "negative_ack_redelivery_delay_ms": 10000,  # Reduced from 60000 to 10 seconds
+        "ack_timeout_ms": 3000,  # Reduced from 5000 to 3 seconds (under 4s requirement)
+        "negative_ack_redelivery_delay_ms": 3000,  # Reduced from 10000 to 3 seconds (under 4s requirement)
         "dead_letter_policy": {
             "max_redeliver_count": 2,  # Reduced from 3
             # TODO: STREAMNATIVE - Update DLQ topic with your tenant/namespace
@@ -122,7 +122,7 @@ class PulsarConfig:
     }
 
     # Retry settings
-    RETRY = {"max_retries": 2, "initial_backoff_ms": 50, "max_backoff_ms": 2000}  # Reduced retry attempts and timeouts
+    RETRY = {"max_retries": 2, "initial_backoff_ms": 50, "max_backoff_ms": 2000}  # Keep at 2s (under 4s requirement)
 
     # Monitoring
     MONITORING = {"stats_interval_seconds": 60}

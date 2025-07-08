@@ -67,7 +67,7 @@ class PulsarHealth:
             # Last resort - try to connect to the admin endpoint
             try:
                 import httpx
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=3.0) as client:
                     admin_url = self._service_url.replace('pulsar://', 'http://').replace('6650', '8080')
                     response = await client.get(f"{admin_url}/admin/v2/brokers/health")
                     return response.status_code == 200
@@ -150,10 +150,10 @@ class PulsarHealth:
             # Record start time for latency measurement
             start_time = datetime.now()
             
-            # Run health checks with longer timeout
+            # Run health checks with reduced timeout (under 4 seconds)
             try:
-                # Set a timeout for the entire health check process
-                connection_ok = await asyncio.wait_for(self.check_connection(), timeout=10.0)
+                # Set a timeout for the entire health check process - reduced from 10s to 3s
+                connection_ok = await asyncio.wait_for(self.check_connection(), timeout=3.0)
             except asyncio.TimeoutError:
                 logger.warning("Pulsar connection check timed out")
                 connection_ok = False
@@ -163,13 +163,13 @@ class PulsarHealth:
             consumer_ok = False
             if connection_ok:
                 try:
-                    producer_ok = await asyncio.wait_for(self.check_producer(), timeout=10.0)
+                    producer_ok = await asyncio.wait_for(self.check_producer(), timeout=3.0)
                 except asyncio.TimeoutError:
                     logger.warning("Pulsar producer check timed out")
                     producer_ok = False
                 
                 try:
-                    consumer_ok = await asyncio.wait_for(self.check_consumer(), timeout=10.0)
+                    consumer_ok = await asyncio.wait_for(self.check_consumer(), timeout=3.0)
                 except asyncio.TimeoutError:
                     logger.warning("Pulsar consumer check timed out")
                     consumer_ok = False
