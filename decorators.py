@@ -3,22 +3,35 @@ Pulsar decorators for common operations.
 """
 import functools
 import logging
+import os
 from collections.abc import Callable
 from typing import Optional
 
 from app.core.pulsar.config import PulsarConfig
 
-from app.core.pulsar.client import PulsarClient
-from app.core.pulsar.metrics import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
-from app.core.pulsar.metrics import PULSAR_CONSUMER_LAG
-
 logger = logging.getLogger(__name__)
-# Initialize Pulsar client lazily; protect import-time instantiation
-try:
-    client = PulsarClient()  # Async client
-except Exception as e:
-    logger.warning(f"PulsarClient initialization failed at import time: {e}")
-    client = None
+
+# Check if Pulsar is enabled before importing the client
+PULSAR_ENABLED = os.getenv("PULSAR_ENABLED", "true").lower() == "true"
+MINIMAL_MODE = os.getenv("MINIMAL_MODE", "false").lower() == "true"
+USE_MANAGED_SERVICES = os.getenv("USE_MANAGED_SERVICES", "false").lower() == "true"
+
+# Only import and initialize Pulsar client if it's enabled
+client = None
+pulsar_messages_sent = None
+pulsar_errors = None
+
+if PULSAR_ENABLED and not MINIMAL_MODE and not USE_MANAGED_SERVICES:
+    try:
+        from app.core.pulsar.client import PulsarClient
+        from app.core.pulsar.metrics import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
+        from app.core.pulsar.metrics import PULSAR_CONSUMER_LAG
+        client = PulsarClient()  # Async client
+    except Exception as e:
+        logger.warning(f"PulsarClient initialization failed at import time: {e}")
+        client = None
+else:
+    logger.info("Pulsar is disabled or running in minimal/managed mode - skipping client initialization")
 
 def validate_topic_permissions(topic: str, role: str | None) -> None:
     """
@@ -69,7 +82,7 @@ def pulsar_task(
     dlq_topic: str | None = None,
     max_retries: int = 3,
     retry_delay: float = 5.0,
-    client: PulsarClient | None = client
+    client: "PulsarClient" | None = client
 ):
     """
     Decorator for creating Pulsar tasks from functions.
@@ -90,12 +103,23 @@ def pulsar_task(
     if dlq_topic is not None and (not isinstance(dlq_topic, str) or not dlq_topic.strip()):
         raise ValueError("DLQ topic must be None or a non-empty string")
 
-    validate_topic_permissions(topic, None)
+    # Skip topic permission validation if Pulsar is disabled
+    if PULSAR_ENABLED and not MINIMAL_MODE and not USE_MANAGED_SERVICES:
+        validate_topic_permissions(topic, None)
 
     def decorator(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            # If Pulsar is disabled, just execute the function without publishing
+            if not PULSAR_ENABLED or MINIMAL_MODE or USE_MANAGED_SERVICES or client is None:
+                logger.debug(f"Pulsar disabled - executing {func.__name__} without publishing to topic {topic}")
+                return await func(*args, **kwargs)
+            
             used_client = client or globals().get('client')
+            if used_client is None:
+                logger.warning(f"No Pulsar client available - executing {func.__name__} without publishing")
+                return await func(*args, **kwargs)
+                
             attempt = 0
             last_exc = None
             while attempt <= max_retries:
@@ -110,12 +134,14 @@ def pulsar_task(
                         "topic": topic  # ! Required for PulsarClient strict topic check
                     }
                     await used_client.send_message(topic, task)
-                    pulsar_messages_sent.labels(topic=topic).inc()
+                    if pulsar_messages_sent:
+                        pulsar_messages_sent.labels(topic=topic).inc()
                     return result
                 except Exception as e:
                     attempt += 1
                     last_exc = e
-                    pulsar_errors.labels(type=e.__class__.__name__).inc()
+                    if pulsar_errors:
+                        pulsar_errors.labels(type=e.__class__.__name__).inc()
                     logger.error(f"Task failed on attempt {attempt}: {e}")
                     if attempt > max_retries:
                         if dlq_topic:
