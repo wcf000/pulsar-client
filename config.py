@@ -96,12 +96,12 @@ class PulsarConfig:
 
     # Producer settings
     PRODUCER = {
-        "send_timeout_ms": 30000,
-        "block_if_queue_full": True,
-        "max_pending_messages": 1000,
+        "send_timeout_ms": 3000,  # Reduced from 30000 to 3 seconds
+        "block_if_queue_full": False,  # Don't block, fail fast
+        "max_pending_messages": 100,  # Reduced from 1000
         "batching_enabled": True,
-        "batching_max_messages": 1000,
-        "batching_max_publish_delay_ms": 10,
+        "batching_max_messages": 100,  # Reduced from 1000
+        "batching_max_publish_delay_ms": 5,  # Reduced from 10
     }
 
     # Polling interval for status checks
@@ -110,19 +110,19 @@ class PulsarConfig:
     # Consumer settings
     CONSUMER = {
         "subscription_type": "Shared",  # or "Exclusive", "Failover", "Key_Shared"
-        "ack_timeout_ms": 30000,
-        "negative_ack_redelivery_delay_ms": 60000,
+        "ack_timeout_ms": 5000,  # Reduced from 30000 to 5 seconds
+        "negative_ack_redelivery_delay_ms": 10000,  # Reduced from 60000 to 10 seconds
         "dead_letter_policy": {
-            "max_redeliver_count": 3,
+            "max_redeliver_count": 2,  # Reduced from 3
             # TODO: STREAMNATIVE - Update DLQ topic with your tenant/namespace
             # Example: "persistent://your-tenant/your-namespace/dlq-topic"
             "dead_letter_topic": "persistent://public/default/user-dlq",
         },
-        "receiver_queue_size": 1000,
+        "receiver_queue_size": 100,  # Reduced from 1000
     }
 
     # Retry settings
-    RETRY = {"max_retries": 5, "initial_backoff_ms": 100, "max_backoff_ms": 10000}
+    RETRY = {"max_retries": 2, "initial_backoff_ms": 50, "max_backoff_ms": 2000}  # Reduced retry attempts and timeouts
 
     # Monitoring
     MONITORING = {"stats_interval_seconds": 60}

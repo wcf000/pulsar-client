@@ -118,9 +118,9 @@ class PulsarClient:
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
 
-    # Circuit breaker configuration
-    CB_FAILURE_THRESHOLD = 1
-    CB_RECOVERY_TIMEOUT = 3
+    # Circuit breaker configuration - fail fast for disabled Pulsar
+    CB_FAILURE_THRESHOLD = 1  # Fail after just 1 failure
+    CB_RECOVERY_TIMEOUT = 1   # Only wait 1 second before trying again
     CB_EXPECTED_EXCEPTION = (ConnectionError, TimeoutError)
 
     def __init__(self, service_url: str = None, max_retries: int = 2, retry_delay: float = 0.1):
@@ -131,9 +131,22 @@ class PulsarClient:
             service_url = PulsarConfig.SERVICE_URL
         self.service_url = service_url
         try:
-            self._client = pulsar.Client(self.service_url)
+            # Add fast timeout configuration to fail quickly when Pulsar is not available
+            self._client = pulsar.Client(
+                self.service_url,
+                connection_timeout_ms=2000,  # 2 seconds instead of default 10 seconds
+                operation_timeout_seconds=3,  # 3 seconds for operations
+                io_threads=1,  # Minimize resources
+                message_listener_threads=1,  # Minimize resources
+                concurrent_lookup_requests=1,  # Minimize resources
+                log_conf_file_path=None,  # Disable detailed logging to reduce overhead
+                use_tls=True if "pulsar+ssl" in service_url else False
+            )
         except AttributeError as e:
             logger.error(f"Failed to initialize Pulsar.Client: {e}")
+            self._client = None
+        except Exception as e:
+            logger.error(f"Failed to connect to Pulsar (timeout after 2s): {e}")
             self._client = None
         self._max_retries = max_retries
         self._retry_delay = retry_delay
@@ -174,7 +187,14 @@ class PulsarClient:
                 producer = self._client.create_producer(topic)
                 producer.close()
                 return True
-            return await asyncio.to_thread(sync_check)
+            # Add timeout to prevent hanging
+            return await asyncio.wait_for(
+                asyncio.to_thread(sync_check), 
+                timeout=1.0  # 1 second timeout for health check
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"[PulsarClient] Health check timeout after 1s")
+            return False
         except Exception as exc:
             # ! Log for diagnostics
             logger.warning(f"[PulsarClient] Health check failed: {exc}")
