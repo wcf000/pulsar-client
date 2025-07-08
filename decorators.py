@@ -1,6 +1,8 @@
 """
 Pulsar decorators for common operations.
 """
+from __future__ import annotations
+
 import functools
 import logging
 import os
@@ -13,15 +15,13 @@ logger = logging.getLogger(__name__)
 
 # Check if Pulsar is enabled before importing the client
 PULSAR_ENABLED = os.getenv("PULSAR_ENABLED", "true").lower() == "true"
-MINIMAL_MODE = os.getenv("MINIMAL_MODE", "false").lower() == "true"
-USE_MANAGED_SERVICES = os.getenv("USE_MANAGED_SERVICES", "false").lower() == "true"
 
 # Only import and initialize Pulsar client if it's enabled
 client = None
 pulsar_messages_sent = None
 pulsar_errors = None
 
-if PULSAR_ENABLED and not MINIMAL_MODE and not USE_MANAGED_SERVICES:
+if PULSAR_ENABLED:
     try:
         from app.core.pulsar.client import PulsarClient
         from app.core.pulsar.metrics import PULSAR_MESSAGE_LATENCY, pulsar_errors, pulsar_messages_sent
@@ -31,7 +31,7 @@ if PULSAR_ENABLED and not MINIMAL_MODE and not USE_MANAGED_SERVICES:
         logger.warning(f"PulsarClient initialization failed at import time: {e}")
         client = None
 else:
-    logger.info("Pulsar is disabled or running in minimal/managed mode - skipping client initialization")
+    logger.info("Pulsar is disabled - skipping client initialization")
 
 def validate_topic_permissions(topic: str, role: str | None) -> None:
     """
@@ -82,7 +82,7 @@ def pulsar_task(
     dlq_topic: str | None = None,
     max_retries: int = 3,
     retry_delay: float = 5.0,
-    client: "PulsarClient" | None = client
+    client: PulsarClient | None = client
 ):
     """
     Decorator for creating Pulsar tasks from functions.
@@ -104,14 +104,14 @@ def pulsar_task(
         raise ValueError("DLQ topic must be None or a non-empty string")
 
     # Skip topic permission validation if Pulsar is disabled
-    if PULSAR_ENABLED and not MINIMAL_MODE and not USE_MANAGED_SERVICES:
+    if PULSAR_ENABLED:
         validate_topic_permissions(topic, None)
 
     def decorator(func: Callable):
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             # If Pulsar is disabled, just execute the function without publishing
-            if not PULSAR_ENABLED or MINIMAL_MODE or USE_MANAGED_SERVICES or client is None:
+            if not PULSAR_ENABLED or client is None:
                 logger.debug(f"Pulsar disabled - executing {func.__name__} without publishing to topic {topic}")
                 return await func(*args, **kwargs)
             

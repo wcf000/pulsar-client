@@ -6,22 +6,31 @@ import asyncio
 import inspect
 import json
 import logging
+import os
 import time
 from datetime import datetime
 
-import pulsar  # Official Pulsar (sync) client
+# Check if Pulsar is enabled before importing dependencies
+PULSAR_ENABLED = os.getenv("PULSAR_ENABLED", "true").lower() == "true"
+
+# Only import Pulsar dependencies if enabled
+if PULSAR_ENABLED:
+    import pulsar  # Official Pulsar (sync) client
 
 from circuitbreaker import CircuitBreakerError, circuit
 from prometheus_client import Counter, Gauge, Histogram
 
 from app.core.pulsar.config import PulsarConfig
-from app.core.telemetry.client import TelemetryClient
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Use the main service name from settings instead of "pulsar_client"
-telemetry = TelemetryClient(service_name=getattr(settings, "PROJECT_NAME", "FastAPI Connect"))
+# Only create telemetry client if Pulsar is enabled
+telemetry = None
+if PULSAR_ENABLED:
+    from app.core.telemetry.client import TelemetryClient
+    # Use the main service name from settings instead of "pulsar_client"
+    telemetry = TelemetryClient(service_name=getattr(settings, "PROJECT_NAME", "FastAPI Connect"))
 
 # Metrics
 PULSAR_BATCH_SIZE = Gauge("pulsar_batch_size", "Size of Pulsar message batches")
