@@ -145,7 +145,16 @@ def pulsar_task(
                     logger.error(f"Task failed on attempt {attempt}: {e}")
                     if attempt > max_retries:
                         if dlq_topic:
-                            await used_client._send_to_dlq(topic, {"args": args, "kwargs": kwargs}, str(e))
+                            try:
+                                await used_client._send_to_dlq(topic, {"args": args, "kwargs": kwargs}, str(e))
+                            except Exception as dlq_error:
+                                logger.error(f"Failed to send to DLQ: {dlq_error}")
+                        
+                        # If it's a Pulsar connection error, log and return the function result
+                        # instead of failing the entire operation
+                        if "ConnectError" in str(e) or "Pulsar error" in str(e):
+                            logger.warning(f"Pulsar connection failed for {func.__name__}, continuing without publishing: {e}")
+                            return result if 'result' in locals() else await func(*args, **kwargs)
                         raise
                     else:
                         import asyncio
