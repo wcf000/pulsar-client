@@ -12,7 +12,7 @@ from app.api.routes.messaging import (
     USER_ACTIVITY_TOPIC,
     SYSTEM_ALERTS_TOPIC
 )
-from app.api.routes.items import (
+from app.api.routes.legacy.items import (
     ITEM_CREATED_TOPIC,
     ITEM_UPDATED_TOPIC,
     ITEM_DELETED_TOPIC
